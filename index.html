@@ -2122,6 +2122,7 @@
                   <svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>
                   <span>Kirim Komentar</span>
                 </button>
+                <small class="upload-note" id="cMsg" style="margin-top:.7rem"></small>
               </form>
 
               <div class="comment-list" id="commentList"></div>
@@ -2820,23 +2821,71 @@
       revealInView();
     })();
   
-    // ===== Komentar (disimpan di browser pengunjung) =====
+    // ===== Komentar: tersimpan di Supabase, tampil untuk semua pengunjung =====
     (function () {
-      const KEY = 'af_comments_v1';
+      // >>> ISI DUA BARIS INI dengan data dari Supabase (Project Settings -> API) <<<
+      const SUPABASE_URL = 'https://mijmosoeqlnuhvfmrnon.supabase.co';
+      const SUPABASE_KEY = 'sb_publishable_GuRlJDkhlTmjyV8fvneMGQ_LW20gTHr';
+      // >>> Selesai <<<
+
+      const useDB = /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(SUPABASE_URL) && !/PROJECT_REF|ISI_/.test(SUPABASE_URL + SUPABASE_KEY);
+      const LOCAL_KEY = 'af_comments_v1';
       const form = document.getElementById('commentForm');
       const list = document.getElementById('commentList');
       const count = document.getElementById('commentCount');
       const photo = document.getElementById('cPhoto');
-      const uploadText = document.getElementById('uploadText');
       const uploadBox = document.getElementById('uploadBox');
       const note = document.getElementById('uploadNote');
+      const msg = document.getElementById('cMsg');
       if (!form) return;
 
-      let comments = [];
+      let comments = [];   // urutan: terbaru di atas
+      let total = 0;
       let avatar = '';
+      const EMPTY_UPLOAD = uploadBox.innerHTML;
 
-      try { comments = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { comments = []; }
+      function say(text, isError) {
+        msg.textContent = text || '';
+        msg.classList.toggle('error', !!isError);
+      }
 
+      // ---------- Penyimpanan ----------
+      async function loadComments() {
+        if (!useDB) {
+          try { comments = (JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]')).reverse(); } catch (e) { comments = []; }
+          total = comments.length;
+          return;
+        }
+        const res = await fetch(SUPABASE_URL + '/rest/v1/comments?select=name,text,avatar,created_at&order=created_at.desc&limit=100', {
+          headers: { apikey: SUPABASE_KEY, Prefer: 'count=exact' }
+        });
+        if (!res.ok) throw new Error('load ' + res.status);
+        const rows = await res.json();
+        comments = rows.map(function (r) {
+  return { name: r.name, text: r.comment, avatar: r.avatar_url || '', time: Date.parse(r.created_at) };
+});
+        const range = res.headers.get('content-range') || '';
+        const m = range.match(/\/(\d+)$/);
+        total = m ? parseInt(m[1], 10) : comments.length;
+      }
+
+      async function saveComment(c) {
+        if (!useDB) {
+          let arr = [];
+          try { arr = JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]'); } catch (e) {}
+          arr.push(c);
+          try { localStorage.setItem(LOCAL_KEY, JSON.stringify(arr)); } catch (e) {}
+          return;
+        }
+        const res = await fetch(SUPABASE_URL + '/rest/v1/comments', {
+          method: 'POST',
+          headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ name: c.name, text: c.text, avatar: c.avatar || null })
+        });
+        if (!res.ok) throw new Error('save ' + res.status);
+      }
+
+      // ---------- Tampilan ----------
       function ago(ts) {
         const m = Math.floor((Date.now() - ts) / 60000);
         if (m < 1) return 'Baru saja';
@@ -2847,7 +2896,7 @@
       }
 
       function render() {
-        count.textContent = '(' + comments.length + ')';
+        count.textContent = '(' + total + ')';
         list.innerHTML = '';
         if (!comments.length) {
           const p = document.createElement('div');
@@ -2856,11 +2905,11 @@
           list.appendChild(p);
           return;
         }
-        comments.slice().reverse().forEach(c => {
+        comments.forEach(function (c) {
           const item = document.createElement('div');
           item.className = 'comment-item';
           let av;
-          if (c.avatar) { av = document.createElement('img'); av.src = c.avatar; av.alt = ''; }
+          if (c.avatar && /^data:image\//.test(c.avatar)) { av = document.createElement('img'); av.src = c.avatar; av.alt = ''; }
           else { av = document.createElement('div'); av.textContent = c.name.charAt(0).toUpperCase(); }
           av.className = 'comment-avatar';
           const body = document.createElement('div');
@@ -2877,7 +2926,14 @@
         });
       }
 
-      photo.addEventListener('change', () => {
+      async function refresh() {
+        try { await loadComments(); say(''); }
+        catch (e) { say('Komentar belum bisa dimuat. Coba muat ulang halaman.', true); }
+        render();
+      }
+
+      // ---------- Foto profil ----------
+      photo.addEventListener('change', function () {
         const f = photo.files[0];
         note.classList.remove('error');
         if (!f) return;
@@ -2888,14 +2944,13 @@
           return;
         }
         const r = new FileReader();
-        r.onload = () => {
-          // perkecil agar hemat penyimpanan
+        r.onload = function () {
           const img = new Image();
-          img.onload = () => {
-            const s = 96, cv = document.createElement('canvas');
-            cv.width = cv.height = s;
+          img.onload = function () {
+            const sz = 96, cv = document.createElement('canvas');
+            cv.width = cv.height = sz;
             const min = Math.min(img.width, img.height);
-            cv.getContext('2d').drawImage(img, (img.width - min) / 2, (img.height - min) / 2, min, min, 0, 0, s, s);
+            cv.getContext('2d').drawImage(img, (img.width - min) / 2, (img.height - min) / 2, min, min, 0, 0, sz, sz);
             avatar = cv.toDataURL('image/jpeg', 0.8);
             uploadBox.innerHTML = '<img src="' + avatar + '" alt="" /><span>' + f.name.replace(/[<>&"]/g, '') + '</span>';
             note.textContent = 'Ukuran file maksimal 5 MB';
@@ -2905,19 +2960,33 @@
         r.readAsDataURL(f);
       });
 
-      form.addEventListener('submit', e => {
+      // ---------- Kirim ----------
+      form.addEventListener('submit', async function (e) {
         e.preventDefault();
         const name = document.getElementById('cName').value.trim();
         const text = document.getElementById('cText').value.trim();
         if (!name || !text) return;
-        comments.push({ name, text, avatar, time: Date.now() });
-        try { localStorage.setItem(KEY, JSON.stringify(comments)); } catch (err) {}
-        form.reset(); avatar = '';
-        uploadBox.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg><span id="uploadText">Pilih Foto Profil</span>';
-        render();
+
+        const last = +localStorage.getItem('af_last_comment') || 0;
+        if (Date.now() - last < 30000) { say('Tunggu sebentar sebelum mengirim komentar lagi.', true); return; }
+
+        const btn = form.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        say('Mengirim...');
+        try {
+          await saveComment({ name: name, text: text, avatar: avatar, time: Date.now() });
+          try { localStorage.setItem('af_last_comment', String(Date.now())); } catch (err) {}
+          form.reset(); avatar = ''; uploadBox.innerHTML = EMPTY_UPLOAD;
+          await refresh();
+          say('Komentar terkirim. Terima kasih!');
+        } catch (err) {
+          say('Gagal mengirim komentar. Coba lagi nanti.', true);
+        }
+        btn.disabled = false;
       });
 
-      render();
+      refresh();
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
     })();
   
     // ===== Navbar Liquid Glass: filter SVG refraksi (dibuat sesuai ukuran pill) =====
