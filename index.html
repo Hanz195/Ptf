@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id">
+<html lang="id" class="loading">
 <head>
   <meta charset="UTF-8" />
   <link rel="icon" type="image/svg+xml" href="https://www.alfari.my.id/favicon.svg" />
@@ -276,6 +276,65 @@
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.06));
       backdrop-filter: blur(6px);
       -webkit-backdrop-filter: blur(6px);
+    }
+
+
+    /* ===== Loading Screen (angka 0% - 100%) ===== */
+    html.loading, html.loading body { overflow: hidden; }
+    #preloader {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: #02030a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.8s ease, visibility 0s linear 0.8s;
+    }
+    #preloader.hide { opacity: 0; visibility: hidden; pointer-events: none; }
+    .pl-count {
+      display: flex;
+      align-items: flex-end;
+      font-family: var(--font-heading);
+      font-weight: 700;
+      line-height: 1;
+      color: #fff;
+      font-size: clamp(4.5rem, 14vw, 8.5rem);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+    .pl-count .pl-percent {
+      font-size: 0.34em;
+      font-weight: 500;
+      color: #1d6bff;
+      margin-left: 0.12em;
+      margin-bottom: 0.18em;
+      letter-spacing: 0;
+    }
+    .pl-bar {
+      width: clamp(200px, 22vw, 300px);
+      height: 2px;
+      margin-top: 1rem;
+      background: rgba(255, 255, 255, 0.14);
+      overflow: hidden;
+      border-radius: 2px;
+    }
+    .pl-bar span {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #1d6bff;
+      box-shadow: 0 0 12px rgba(29, 107, 255, 0.8);
+      transform: scaleX(0);
+      transform-origin: left center;
+    }
+    .pl-text {
+      margin-top: 0.9rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.85);
+      letter-spacing: 0.02em;
     }
 
     .status-badge {
@@ -1608,6 +1667,56 @@
   </style>
 </head>
 <body>
+  <!-- Loading Screen -->
+  <div id="preloader" aria-live="polite" aria-label="Memuat halaman">
+    <div class="pl-count"><span id="plNum">0</span><span class="pl-percent">%</span></div>
+    <div class="pl-bar"><span id="plBar"></span></div>
+    <div class="pl-text">Memuat aset...</div>
+  </div>
+  <script>
+    // ===== Loading Screen: hitung 0% - 100% lalu hilang halus =====
+    (function () {
+      const pre = document.getElementById('preloader');
+      if (!pre) return;
+      const num = document.getElementById('plNum');
+      const bar = document.getElementById('plBar');
+      const MIN = 2200;   // waktu minimum tampil (ms)
+      const MAX = 9000;   // batas aman, tetap lanjut walau aset lambat
+      const t0 = performance.now();
+      let loaded = document.readyState === 'complete';
+      let shown = 0;
+      let done = false;
+
+      window.addEventListener('load', function () { loaded = true; });
+
+      function finish() {
+        if (done) return;
+        done = true;
+        num.textContent = '100';
+        bar.style.transform = 'scaleX(1)';
+        setTimeout(function () {
+          pre.classList.add('hide');
+          document.documentElement.classList.remove('loading');
+          setTimeout(function () { pre.remove(); }, 1000);
+        }, 450);
+      }
+
+      function tick(now) {
+        if (done) return;
+        const t = now - t0;
+        let target = loaded ? 100 : Math.min(90, (t / (MIN * 1.4)) * 90);
+        if (t < MIN) target = Math.min(target, (t / MIN) * 100);
+        if (t > MAX) target = 100;
+        shown += (target - shown) * 0.1;
+        if (target === 100 && shown > 99.4) shown = 100;
+        num.textContent = Math.floor(shown);
+        bar.style.transform = 'scaleX(' + (shown / 100) + ')';
+        if (shown >= 100) { finish(); return; }
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    })();
+  </script>
   <!-- WebGL Three.js Canvas Background -->
   <canvas id="webgl-canvas"></canvas>
 
@@ -2030,7 +2139,7 @@
           <a href="#about">Tentang</a>
           <a href="#portfolio" data-tab="projects">Portofolio</a>
           <a href="#contact">Kontak</a>
-          <a href="https://farhan.my.id" target="_blank" rel="noopener noreferrer"></a>
+          <a href="https://farhan.my.id" target="_blank" rel="noopener noreferrer">farhan.my.id</a>
         </div>
         <p>© 2026 A.FARHAN. Dibuat dengan Three.js & Web Standards.</p>
       </div>
@@ -2874,6 +2983,7 @@
       if (window.ResizeObserver) new ResizeObserver(build).observe(pill);
       window.addEventListener('resize', build);
     })();
+  
   </script>
 </body>
 </html>
