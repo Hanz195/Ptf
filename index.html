@@ -2862,8 +2862,8 @@
         if (!res.ok) throw new Error('load ' + res.status);
         const rows = await res.json();
         comments = rows.map(function (r) {
-  return { name: r.name, text: r.comment, avatar: r.avatar_url || '', time: Date.parse(r.created_at) };
-});
+          return { name: r.name, text: r.text, avatar: r.avatar || '', time: Date.parse(r.created_at) };
+        });
         const range = res.headers.get('content-range') || '';
         const m = range.match(/\/(\d+)$/);
         total = m ? parseInt(m[1], 10) : comments.length;
